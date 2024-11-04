@@ -39,11 +39,12 @@ jobs:
       - name: Set matrix
         id: set-matrix
         run: |
-          matrix=$(jq -nc --arg urls "${{ steps.parse_inputs.outputs.urls }}" --arg artifact_names "${{ steps.parse_inputs.outputs.artifact_names }}" '
+          matrix=$(jq -nc --arg urls "$urls" --arg artifact_names "$artifact_names" '
             $urls | fromjson | to_entries | map({index: .key, url: .value}) |
             $artifact_names | fromjson | to_entries | map({artifact_name:.value}) |
             transpose | map(add)
           ')
+          
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
   mirror:
