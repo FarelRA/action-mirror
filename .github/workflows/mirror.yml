@@ -12,21 +12,19 @@ on:
       custom_headers:
         description: 'Custom global headers (e.g., "Authorization: Bearer <token>", comma-separated)'
         required: false
-      generate_signature:  # New input for signature generation
+      generate_signature:
         description: 'Generate checksums (SHA256, SHA512, MD5) for downloaded files? (true/false)'
         required: false
         default: 'true'
 
 jobs:
-  generate_matrix:  # Job to generate the matrix dynamically
+  generate_matrix:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - id: parse_inputs
-        env:
-          URLS: ${{ inputs.urls }}
-          ARTIFACT_NAMES: ${{ inputs.artifact_names }}
+      - name: Parse input
+        id: parse_inputs
         run: |
           urls=(${URLS//,/ })
           artifact_names=(${ARTIFACT_NAMES//,/ })
@@ -34,24 +32,21 @@ jobs:
             echo "Error: The number of URLs must match the number of artifact names."
             exit 1
           fi
+          echo "::set-output name=urls::$(echo "$urls" | jq -Rcs .)"
+          echo "::set-output name=artifact_names::$(echo "$artifact_names" | jq -Rcs .)"
 
-          echo "urls=$urls" >> $GITHUB_ENV
-          echo "artifact_names=$artifact_names" >> $GITHUB_ENV
-
-      - id: set-matrix
+      - name: Set matrix
+        id: set-matrix
         run: |
-          matrix='{"include": ['
-          for i in "${!urls[@]}"; do
-            matrix+="{\"index\": $i, \"url\": \"${urls[$i]}\", \"artifact_name\": \"${artifact_names[$i]}\"},"
-          done
-          matrix="${matrix%,}" # Remove trailing comma
-          matrix+=']}'
-
-          echo "$matrix"
+          matrix=$(jq -nc --arg urls "${{ steps.parse_inputs.outputs.urls }}" --arg artifact_names "${{ steps.parse_inputs.outputs.artifact_names }}" '
+            $urls | fromjson | to_entries | map({index: .key, url: .value}) |
+            $artifact_names | fromjson | to_entries | map({artifact_name:.value}) |
+            transpose | map(add)
+          ')
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
   mirror:
-    needs: generate_matrix     # Depend on the matrix generation job
+    needs: generate_matrix
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.generate_matrix.outputs.matrix) }}
@@ -59,31 +54,20 @@ jobs:
       - name: Install aria2
         run: sudo apt-get update && sudo apt-get install -y aria2
 
-      - name: Set up download environment variables
-        id: setup_vars
+      - name: Download file with aria2
         env:
-          URL: ${{ matrix.pair[0] }}
-          ARTIFACT_NAME: ${{ matrix.pair[1] }}
+          URL: ${{ matrix.url }}
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
           CUSTOM_HEADERS: ${{ inputs.custom_headers }}
           GENERATE_SIGNATURE: ${{ inputs.generate_signature }}
         run: |
-          if [ -z "$CUSTOM_HEADERS" ]; then
-            echo "CUSTOM_HEADERS not provided; proceeding without headers."
-          fi
-          echo "URL=$URL" >> $GITHUB_ENV
-          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
-
-      - name: Download file with aria2
-        run: |
           aria2c_command="aria2c -x16 -s1024"
-
           if [ -n "$CUSTOM_HEADERS" ]; then
             headers=(${CUSTOM_HEADERS//,/ })
             for header in "${headers[@]}"; do
               aria2c_command+=" --header='$header'"
             done
           fi
-
           aria2c_command+=" '$URL' -o '$ARTIFACT_NAME'"
           echo "Executing: $aria2c_command"
           eval "$aria2c_command"
@@ -91,9 +75,9 @@ jobs:
       - name: Generate checksums (optional)
         if: env.GENERATE_SIGNATURE == 'true'
         run: |
-          sha256sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha256"
-          sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512"
-          md5sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.md5"
+          sha256sum "$ARTIFACT_NAME" > "$ARTIFACT_NAME.sha256"
+          sha512sum "$ARTIFACT_NAME" > "$ARTIFACT_NAME.sha512"
+          md5sum "$ARTIFACT_NAME" > "$ARTIFACT_NAME.md5"
 
       - name: Verify downloaded file
         run: |
@@ -106,7 +90,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.pair[1] }}
-          path: | # Upload the file and checksums
-            ${{ matrix.pair[1] }}
-            ${{ matrix.pair[1] }}.*
+          name: ${{ matrix.artifact_name }}
+          path: |
+            ${{ matrix.artifact_name }}
+            ${{ matrix.artifact_name }}.*
