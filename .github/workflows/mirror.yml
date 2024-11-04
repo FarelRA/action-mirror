@@ -36,18 +36,20 @@ jobs:
             exit 1
           fi
 
-          echo "urls=$(echo "$urls" | jq -Rcs .)"                      >> $GITHUB_ENV
-          echo "artifact_names=$(echo "$artifact_names" | jq -Rcs .)"  >> $GITHUB_ENV
+          echo "urls=$urls" >> $GITHUB_ENV
+          echo "artifact_names=$artifact_names" >> $GITHUB_ENV
 
       - name: Set matrix
         id: set-matrix
         run: |
-          matrix=$(jq -nc --arg urls "$urls" --arg artifact_names "$artifact_names" '
-            $urls | fromjson | to_entries | map({index: .key, url: .value}) |
-            $artifact_names | fromjson | to_entries | map({artifact_name:.value}) |
-            transpose | map(add)
-          ')
-          
+          matrix='{"include": ['
+          for i in "${!urls[@]}"; do
+            matrix+="{\"index\": $i, \"url\": \"${urls[$i]}\", \"artifact_name\": \"${artifact_names[$i]}\"},"
+          done
+          matrix="${matrix%,}" # Remove trailing comma
+          matrix+=']}'
+
+          echo "$matrix"
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
   mirror:
