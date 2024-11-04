@@ -1,0 +1,81 @@
+name: Mirror Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: 'URLs to download (comma-separated)'
+        required: true
+      artifact_names:
+        description: 'Artifact names (comma-separated, same order as URLs)'
+        required: true
+      custom_headers:
+        description: 'Custom global headers (e.g., "Authorization: Bearer <token>", comma-separated)'
+        required: false
+      generate_signature:  # New input for signature generation
+        description: 'Generate checksums (SHA256, SHA512, MD5) for downloaded files? (true/false)'
+        required: false
+        default: 'true'
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pair: ${{ fromJson(inputs.urls) | zip(fromJson(inputs.artifact_names)) }} # Pair URLs and artifact names together
+
+    steps:
+      - name: Install aria2
+        run: sudo apt-get update && sudo apt-get install -y aria2
+
+      - name: Set up download environment variables
+        id: setup_vars
+        env:
+          URL: ${{ matrix.pair[0] }}
+          ARTIFACT_NAME: ${{ matrix.pair[1] }}
+          CUSTOM_HEADERS: ${{ inputs.custom_headers }}
+          GENERATE_SIGNATURE: ${{ inputs.generate_signature }}
+        run: |
+          if [ -z "$CUSTOM_HEADERS" ]; then
+            echo "CUSTOM_HEADERS not provided; proceeding without headers."
+          fi
+          echo "URL=$URL" >> $GITHUB_ENV
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
+
+      - name: Download file with aria2
+        run: |
+          aria2c_command="aria2c -x16 -s1024"
+
+          if [ -n "$CUSTOM_HEADERS" ]; then
+            headers=(${CUSTOM_HEADERS//,/ })
+            for header in "${headers[@]}"; do
+              aria2c_command+=" --header='$header'"
+            done
+          fi
+
+          aria2c_command+=" '$URL' -o '$ARTIFACT_NAME'"
+          echo "Executing: $aria2c_command"
+          eval "$aria2c_command"
+
+      - name: Generate checksums (optional)
+        if: env.GENERATE_SIGNATURE == 'true'
+        run: |
+          sha256sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha256"
+          sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512"
+          md5sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.md5"
+
+      - name: Verify downloaded file
+        run: |
+          if [ ! -f "$ARTIFACT_NAME" ]; then
+            echo "Download failed for $ARTIFACT_NAME"
+            exit 1
+          fi
+          ls -al "$ARTIFACT_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.pair[1] }}
+          path: | # Upload the file and checksums
+            ${{ matrix.pair[1] }}
+            ${{ matrix.pair[1] }}.*
