@@ -23,10 +23,16 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      - id: parse_inputs
+        run: |
+          urls=(${{ inputs.urls//,/ }})
+          artifact_names=(${{ inputs.artifact_names//,/ }})
+          if [ "${#urls[@]}" -ne "${#artifact_names[@]}" ]; then
+            echo "Error: The number of URLs must match the number of artifact names."
+            exit 1
+          fi
       - id: set-matrix
         run: |
-          urls=(${URLS//,/ })
-          artifact_names=(${ARTIFACT_NAMES//,/ })
           matrix='{"include": ['
           for i in "${!urls[@]}"; do
             matrix+="{\"index\": $i, \"url\": \"${urls[$i]}\", \"artifact_name\": \"${artifact_names[$i]}\"},"
