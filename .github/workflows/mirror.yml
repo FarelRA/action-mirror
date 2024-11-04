@@ -32,8 +32,9 @@ jobs:
             echo "Error: The number of URLs must match the number of artifact names."
             exit 1
           fi
-          echo "::set-output name=urls::$(echo "$urls" | jq -Rcs .)"
-          echo "::set-output name=artifact_names::$(echo "$artifact_names" | jq -Rcs .)"
+
+          echo "urls=$(echo "$urls" | jq -Rcs .)"                      >> $GITHUB_ENV
+          echo "artifact_names=$(echo "$artifact_names" | jq -Rcs .)"  >> $GITHUB_ENV
 
       - name: Set matrix
         id: set-matrix
