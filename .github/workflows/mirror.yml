@@ -33,6 +33,7 @@ jobs:
           done
           matrix="${matrix%,}" # Remove trailing comma
           matrix+=']}'
+          echo "$matrix"
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
   mirror:
