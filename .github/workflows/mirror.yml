@@ -24,13 +24,20 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - id: parse_inputs
+        env:
+          URLS: ${{ inputs.urls }}
+          ARTIFACT_NAMES: ${{ inputs.artifact_names }}
         run: |
-          urls=(${{ inputs.urls//,/ }})
-          artifact_names=(${{ inputs.artifact_names//,/ }})
+          urls=(${URLS//,/ })
+          artifact_names=(${ARTIFACT_NAMES//,/ })
           if [ "${#urls[@]}" -ne "${#artifact_names[@]}" ]; then
             echo "Error: The number of URLs must match the number of artifact names."
             exit 1
           fi
+
+          echo "urls=$urls" >> $GITHUB_ENV
+          echo "artifact_names=$artifact_names" >> $GITHUB_ENV
+
       - id: set-matrix
         run: |
           matrix='{"include": ['
@@ -39,6 +46,7 @@ jobs:
           done
           matrix="${matrix%,}" # Remove trailing comma
           matrix+=']}'
+
           echo "$matrix"
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
