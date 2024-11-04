@@ -18,12 +18,28 @@ on:
         default: 'true'
 
 jobs:
+  generate_matrix:  # Job to generate the matrix dynamically
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          urls=(${URLS//,/ })
+          artifact_names=(${ARTIFACT_NAMES//,/ })
+          matrix='{"include": ['
+          for i in "${!urls[@]}"; do
+            matrix+="{\"index\": $i, \"url\": \"${urls[$i]}\", \"artifact_name\": \"${artifact_names[$i]}\"},"
+          done
+          matrix="${matrix%,}" # Remove trailing comma
+          matrix+=']}'
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
   mirror:
+    needs: generate_matrix     # Depend on the matrix generation job
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        pair: ${{ fromJson(inputs.urls) | zip(fromJson(inputs.artifact_names)) }} # Pair URLs and artifact names together
-
+      matrix: ${{ fromJson(needs.generate_matrix.outputs.matrix) }}
     steps:
       - name: Install aria2
         run: sudo apt-get update && sudo apt-get install -y aria2
