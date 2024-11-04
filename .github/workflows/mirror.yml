@@ -25,6 +25,9 @@ jobs:
     steps:
       - name: Parse input
         id: parse_inputs
+        env:
+          URLS: ${{ inputs.urls }}
+          ARTIFACT_NAMES: ${{ inputs.artifact_names }}
         run: |
           urls=(${URLS//,/ })
           artifact_names=(${ARTIFACT_NAMES//,/ })
