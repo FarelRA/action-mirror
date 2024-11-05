@@ -96,7 +96,6 @@ jobs:
     env:
       URL: ${{ matrix.url }}
       ARTIFACT_NAME: ${{ matrix.artifact_name }}
-      CUSTOM_HEADERS: ${{ inputs.custom_headers }}
       GENERATE_SIGNATURE: ${{ inputs.generate_signature }}
     steps:
       - name: Install aria2
@@ -106,7 +105,7 @@ jobs:
         run: |
           aria2c_command="aria2c -x16 -s1024"
 
-          headers=($CUSTOM_HEADERS)
+          headers=(${{ inputs.custom_headers }})
           if [[ -n "${headers[@]}" ]]; then
             for header in "${headers[@]}"; do
               aria2c_command+=" --header='$header'"
