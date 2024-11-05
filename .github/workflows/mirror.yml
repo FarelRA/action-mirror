@@ -63,8 +63,8 @@ jobs:
           done
 
           # Validate custom headers (optional, basic check)
-          if [ -n "${{ inputs.custom_headers }}" ]; then
-            headers=(${{ inputs.custom_headers }})
+          headers=(${{ inputs.custom_headers }})
+          if [[ -n "${headers[@]}" ]]; then
             for header in "${headers[@]}"; do
               if [[ ! "$header" =~ : ]]; then  # Check if not contains a colon
                 echo "Error: Invalid header format: $header. Must contain a colon."
