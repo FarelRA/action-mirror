@@ -4,9 +4,11 @@ on:
   push:
     branches:
     - main
+    paths-ignore: ['action_inputs.ini']
   pull_request:
     branches:
     - main
+    paths-ignore: ['action_inputs.ini']
   workflow_dispatch:
     inputs:
       urls:
