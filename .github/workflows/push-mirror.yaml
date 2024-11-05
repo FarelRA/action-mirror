@@ -21,7 +21,10 @@ jobs:
         id: read_inputs
         run: |
           if [ -f action_inputs.ini ]; then
-            . action_inputs.ini
+            urls=$(sed -n '/^urls=/s/urls=\(.*\)/\1/p' action_inputs.ini)
+            artifact_names=$(sed -n '/^artifact_names=/s/artifact_names=\(.*\)/\1/p' action_inputs.ini)
+            custom_headers=$(sed -n '/^custom_headers=/s/custom_headers=\(.*\)/\1/p' action_inputs.ini)
+
             echo "urls=$urls" | tee --append $GITHUB_ENV
             echo "artifact_names=$artifact_names" | tee --append $GITHUB_ENV
             echo "custom_headers=$custom_headers" | tee --append $GITHUB_ENV
