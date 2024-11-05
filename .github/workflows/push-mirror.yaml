@@ -1,0 +1,169 @@
+name: Mirror Artifacts
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  generate_matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Read inputs from file
+        id: read_inputs
+        run: |
+          if [ -f action_inputs.ini ]; then
+            . action_inputs.ini
+            echo "urls=$urls" >> $GITHUB_ENV
+            echo "artifact_names=$artifact_names" >> $GITHUB_ENV
+            echo "custom_headers=$custom_headers" >> $GITHUB_ENV
+          else
+            echo "File 'action_inputs.ini' not found"
+          fi
+
+      - name: Remove input file and commit
+        if: (env.urls || env.artifact_names)
+        run: |
+          rm action_inputs.ini
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Remove input file [skip ci]"
+            git push
+          fi
+
+      - name: Set default inputs if not in file or workflow_dispatch
+        if: (!env.urls || !env.artifact_names)
+        run: |
+          echo 'urls="https://raw.githubusercontent.com/actions/checkout/v4.1.1/README.md https://raw.githubusercontent.com/actions/upload-artifact/v4.4.3/README.md"' >> $GITHUB_ENV
+          echo 'artifact_names="checkout-readme.md upload-artifact-readme.md"' >> $GITHUB_ENV
+          echo 'custom_headers="User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0"' >> $GITHUB_ENV
+    
+      - name: Parse input
+        id: parse_inputs
+        run: |
+          urls=(${{ env.urls || inputs.urls }})
+          artifact_names=(${{ env.artifact_names || inputs.artifact_names }})
+          headers=(${{ env.custom_headers || inputs.custom_headers }})
+          
+          if [[ "${#urls[@]}" -ne "${#artifact_names[@]}" ]]; then
+            echo "Error: The number of URLs must equal to the number of artifact names."
+            exit 1
+          fi
+
+          # Validate URLs (support all aria2 protocols)
+          #HTTP/HTTPS, FTP, SFTP, BitTorrent/Magnet and Metalink
+          supported_protocols=(http https ftp sftp metalink) # Process `magnet` differently
+          valid_protocol=false
+          for url in "${urls[@]}"; do
+            for protocol in "${supported_protocols[@]}"; do
+              if [[ "$url" =~ ^$protocol:// ]]; then
+                valid_protocol=true
+                break
+              fi
+            done
+            if ! $valid_protocol; then
+              if ! [[ "$url" =~ ^magnet:\?* ]]; then # If it's also not a magnet links
+                echo "Error: Invalid URL protocol: $url. Supported protocols: ${supported_protocols[@]}, magnet."
+                exit 1
+              fi
+            fi
+          done
+
+          # Validate artifact names (disallow invalid characters)
+          invalid_chars='\/:*?"<>|'
+          for name in "${artifact_names[@]}"; do
+            if [[ "$name" =~ [$invalid_chars] ]]; then
+              echo "Error: Invalid characters in artifact name: $name. Disallowed characters: '$invalid_chars'."
+              exit 1
+            fi
+          done
+
+          # Validate custom headers (optional, basic check)
+          if [[ -n "${headers[@]}" ]]; then
+            for header in "${headers[@]}"; do
+              if [[ ! "$header" =~ : ]]; then  # Check if not contains a colon
+                echo "Error: Invalid header format: $header. Must contain a colon."
+                exit 1
+              fi
+            done
+          fi
+
+      - name: Set matrix
+        id: set-matrix
+        run: |
+          urls=(${{ env.urls || inputs.urls }})
+          artifact_names=(${{ env.artifact_names || inputs.artifact_names }})
+
+          matrix='{"include": ['
+          for i in "${!urls[@]}"; do
+            matrix+="{\"index\": $i, \"url\": \"${urls[$i]}\", \"artifact_name\": \"${artifact_names[$i]}\"},"
+          done
+          matrix="${matrix%,}" # Remove trailing comma
+          matrix+=']}'
+
+          echo "matrix=$matrix" | tee --append $GITHUB_OUTPUT
+
+  mirror:
+    needs: generate_matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.generate_matrix.outputs.matrix) }}
+    env:
+      URL: ${{ matrix.url }}
+      ARTIFACT_NAME: ${{ matrix.artifact_name }}
+    steps:
+      - name: Install aria2
+        run: sudo apt-get update && sudo apt-get install -y aria2
+
+      - name: Download file
+        run: |
+          aria2c_command="aria2c -x16 -s1024"
+
+          headers=(${{ env.custom_headers || inputs.custom_headers }})
+          if [[ -n "${headers[@]}" ]]; then
+            for header in "${headers[@]}"; do
+              aria2c_command+=" --header='$header'"
+            done
+          fi
+          aria2c_command+=" '$URL' -o '$ARTIFACT_NAME'"
+
+          echo "Executing: $aria2c_command"
+          eval "$aria2c_command"
+
+      - name: Generate checksums
+        run: |
+          md5sum=$(md5sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.md5")
+          sha256sum=$(sha256sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha256")
+          sha512sum=$(sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512")
+
+          echo "MD5    : $md5sum"
+          echo "SHA256 : $sha256sum"
+          echo "SHA512 : $sha512sum"
+
+      - name: Verify downloaded file
+        run: |
+          if [ ! -f "$ARTIFACT_NAME" ]; then
+            echo "Download failed for $ARTIFACT_NAME"
+            exit 1
+          fi
+          ls -al $ARTIFACT_NAME*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            ${{ matrix.artifact_name }}
+            ${{ matrix.artifact_name }}.*
