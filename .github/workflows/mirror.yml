@@ -29,7 +29,7 @@ jobs:
           urls=(${{ inputs.urls }})
           artifact_names=(${{ inputs.artifact_names }})
           
-          if [ "${#urls[@]}" -ne "${#artifact_names[@]}" ]; then
+          if [[ "${#urls[@]}" -ne "${#artifact_names[@]}" ]]; then
             echo "Error: The number of URLs must equal to the number of artifact names."
             exit 1
           fi
@@ -106,8 +106,8 @@ jobs:
         run: |
           aria2c_command="aria2c -x16 -s1024"
 
-          if [ -n "$CUSTOM_HEADERS" ]; then
-            headers=(${CUSTOM_HEADERS//,/ })
+          headers=($CUSTOM_HEADERS)
+          if [[ -n "${headers[@]}" ]]; then
             for header in "${headers[@]}"; do
               aria2c_command+=" --header='$header'"
             done
