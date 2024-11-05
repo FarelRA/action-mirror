@@ -26,13 +26,16 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      custom_headers: ${{ steps.set_def_inputs.outputs.custom_headers }}
     steps:
       - name: Set default inputs
+        id: set_def_inputs
         if: github.event_name != 'workflow_dispatch'
         run: |
           echo 'urls="https://raw.githubusercontent.com/actions/checkout/v4.1.1/README.md" "https://raw.githubusercontent.com/actions/upload-artifact/v4.4.3/README.md"' | tee --append $GITHUB_ENV
           echo 'artifact_names="checkout-readme.md" "upload-artifact-readme.md"' | tee --append $GITHUB_ENV
           echo 'custom_headers="User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0"' | tee --append $GITHUB_ENV
+          echo 'custom_headers="User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0"' | tee --append $GITHUB_OUTPUT
 
       - name: Parse input
         id: parse_inputs
@@ -108,13 +111,6 @@ jobs:
       URL: ${{ matrix.url }}
       ARTIFACT_NAME: ${{ matrix.artifact_name }}
     steps:
-      - name: Set default inputs
-        if: github.event_name != 'workflow_dispatch'
-        run: |
-          echo 'urls="https://raw.githubusercontent.com/actions/checkout/v4.1.1/README.md" "https://raw.githubusercontent.com/actions/upload-artifact/v4.4.3/README.md"' | tee --append $GITHUB_ENV
-          echo 'artifact_names="checkout-readme.md" "upload-artifact-readme.md"' | tee --append $GITHUB_ENV
-          echo 'custom_headers="User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0"' | tee --append $GITHUB_ENV
-
       - name: Install aria2
         run: sudo apt-get update && sudo apt-get install -y aria2
 
@@ -122,7 +118,7 @@ jobs:
         run: |
           aria2c_command="aria2c -x16 -s1024"
 
-          headers=(${{ env.custom_headers || inputs.custom_headers }})
+          headers=(${{ needs.generate_matrix.outputs.custom_headers || inputs.custom_headers }})
           if [[ -n "${headers[@]}" ]]; then
             for header in "${headers[@]}"; do
               aria2c_command+=" --header='$header'"
