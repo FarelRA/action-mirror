@@ -15,6 +15,7 @@ jobs:
       contents: write
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      custom_headers: ${{ steps.read_inputs.outputs.custom_headers ||  steps.set_def_inputs.outputs.custom_headers }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2
@@ -30,6 +31,7 @@ jobs:
             echo "urls=$urls" | tee --append $GITHUB_ENV
             echo "artifact_names=$artifact_names" | tee --append $GITHUB_ENV
             echo "custom_headers=$custom_headers" | tee --append $GITHUB_ENV
+            echo "custom_headers=$custom_headers" | tee --append $GITHUB_OUTPUT
           else
             echo "File 'action_inputs.ini' not found"
           fi
@@ -49,6 +51,7 @@ jobs:
           fi
 
       - name: Set default inputs if not in file or workflow_dispatch
+        id: set_def_inputs
         if: (!env.urls || !env.artifact_names)
         run: |
           echo 'urls="https://raw.githubusercontent.com/actions/checkout/v4.1.1/README.md" "https://raw.githubusercontent.com/actions/upload-artifact/v4.4.3/README.md"' | tee --append $GITHUB_ENV
@@ -58,9 +61,9 @@ jobs:
       - name: Parse input
         id: parse_inputs
         run: |
-          urls=(${{ env.urls || inputs.urls }})
-          artifact_names=(${{ env.artifact_names || inputs.artifact_names }})
-          headers=(${{ env.custom_headers || inputs.custom_headers }})
+          urls=(${{ env.urls }})
+          artifact_names=(${{ env.artifact_names }})
+          headers=(${{ env.custom_headers }})
           
           if [[ "${#urls[@]}" -ne "${#artifact_names[@]}" ]]; then
             echo "Error: The number of URLs must equal to the number of artifact names."
@@ -108,8 +111,8 @@ jobs:
       - name: Set matrix
         id: set-matrix
         run: |
-          urls=(${{ env.urls || inputs.urls }})
-          artifact_names=(${{ env.artifact_names || inputs.artifact_names }})
+          urls=(${{ env.urls }})
+          artifact_names=(${{ env.artifact_names }})
 
           matrix='{"include": ['
           for i in "${!urls[@]}"; do
@@ -136,7 +139,7 @@ jobs:
         run: |
           aria2c_command="aria2c -x16 -s1024"
 
-          headers=(${{ env.custom_headers || inputs.custom_headers }})
+          headers=(${{ needs.generate_matrix.outputs.custom_headers }})
           if [[ -n "${headers[@]}" ]]; then
             for header in "${headers[@]}"; do
               aria2c_command+=" --header='$header'"
