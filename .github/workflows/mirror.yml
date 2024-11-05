@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       urls:
-        description: 'URLs to download (comma-separated)'
+        description: 'URLs to download (space-separated)'
         required: true
       artifact_names:
-        description: 'Artifact names (comma-separated, same order as URLs)'
+        description: 'Artifact names (space-separated, same order as URLs)'
         required: true
       custom_headers:
         description: 'Custom global headers (e.g., "Authorization: Bearer <token>", comma-separated)'
@@ -25,23 +25,60 @@ jobs:
     steps:
       - name: Parse input
         id: parse_inputs
-        env:
-          URLS: ${{ inputs.urls }}
-          ARTIFACT_NAMES: ${{ inputs.artifact_names }}
         run: |
-          urls=(${URLS//,/ })
-          artifact_names=(${ARTIFACT_NAMES//,/ })
+          urls=(${{ inputs.urls }})
+          artifact_names=(${{ inputs.artifact_names }})
+          
           if [ "${#urls[@]}" -ne "${#artifact_names[@]}" ]; then
-            echo "Error: The number of URLs must match the number of artifact names."
+            echo "Error: The number of URLs must equal to the number of artifact names."
             exit 1
           fi
 
-          echo "urls=$urls" >> $GITHUB_ENV
-          echo "artifact_names=$artifact_names" >> $GITHUB_ENV
+          # Validate URLs (support all aria2 protocols)
+          #HTTP/HTTPS, FTP, SFTP, BitTorrent/Magnet and Metalink
+          supported_protocols=(http https ftp sftp metalink) # Process `magnet` differently
+          valid_protocol=false
+          for url in "${urls[@]}"; do
+            for protocol in "${supported_protocols[@]}"; do
+              if [[ "$url" =~ ^$protocol:// ]]; then
+                valid_protocol=true
+                break
+              fi
+            done
+            if ! $valid_protocol; then
+              if ! [[ "$url" =~ ^magnet:\?* ]]; then # If it's also not a magnet links
+                echo "Error: Invalid URL protocol: $url. Supported protocols: ${supported_protocols[@]}, magnet."
+                exit 1
+              fi
+            fi
+          done
+
+          # Validate artifact names (disallow invalid characters)
+          invalid_chars='\/:*?"<>|'
+          for name in "${artifact_names[@]}"; do
+            if [[ "$name" =~ [$invalid_chars] ]]; then
+              echo "Error: Invalid characters in artifact name: $name. Disallowed characters: '$invalid_chars'."
+              exit 1
+            fi
+          done
+
+          # Validate custom headers (optional, basic check)
+          if [ -n "${{ inputs.custom_headers }}" ]; then
+            headers=(${{ inputs.custom_headers }})
+            for header in "${headers[@]}"; do
+              if [[ ! "$header" =~ : ]]; then  # Check if not contains a colon
+                echo "Error: Invalid header format: $header. Must contain a colon."
+                exit 1
+              fi
+            done
+          fi
 
       - name: Set matrix
         id: set-matrix
         run: |
+          urls=(${{ inputs.urls }})
+          artifact_names=(${{ inputs.artifact_names }})
+
           matrix='{"include": ['
           for i in "${!urls[@]}"; do
             matrix+="{\"index\": $i, \"url\": \"${urls[$i]}\", \"artifact_name\": \"${artifact_names[$i]}\"},"
@@ -49,32 +86,21 @@ jobs:
           matrix="${matrix%,}" # Remove trailing comma
           matrix+=']}'
 
-          echo "$matrix"
-          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          echo "matrix=$matrix" | tee --append $GITHUB_OUTPUT
 
   mirror:
     needs: generate_matrix
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.generate_matrix.outputs.matrix) }}
+    env:
+      URL: ${{ matrix.url }}
+      ARTIFACT_NAME: ${{ matrix.artifact_name }}
+      CUSTOM_HEADERS: ${{ inputs.custom_headers }}
+      GENERATE_SIGNATURE: ${{ inputs.generate_signature }}
     steps:
       - name: Install aria2
         run: sudo apt-get update && sudo apt-get install -y aria2
-
-      - name: Set up environment variables
-        id: setup_vars
-        env:
-          URL: ${{ matrix.url }}
-          ARTIFACT_NAME: ${{ matrix.artifact_name }}
-          CUSTOM_HEADERS: ${{ inputs.custom_headers }}
-          GENERATE_SIGNATURE: ${{ inputs.generate_signature }}
-        run: |
-          if [ -z "$CUSTOM_HEADERS" ]; then
-            echo "CUSTOM_HEADERS not provided; proceeding without headers."
-          fi
-          
-          echo "URL=$URL" >> $GITHUB_ENV
-          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
 
       - name: Download file
         run: |
@@ -107,7 +133,7 @@ jobs:
           ls -al "$ARTIFACT_NAME"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.4.3
         with:
           name: ${{ matrix.artifact_name }}
           path: |
