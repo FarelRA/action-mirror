@@ -138,8 +138,8 @@ jobs:
           sha512sum=$(sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512")
 
           echo "MD5    : $md5sum"
-          echo "SHA256 : $md5sum"
-          echo "SHA512 : $md5sum"
+          echo "SHA256 : $sha256sum"
+          echo "SHA512 : $sha512sum"
       - name: Verify downloaded file
         run: |
           if [ ! -f "$ARTIFACT_NAME" ]; then
