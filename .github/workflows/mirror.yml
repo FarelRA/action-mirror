@@ -10,7 +10,7 @@ on:
         description: 'Artifact names (space-separated, same order as URLs)'
         required: true
       custom_headers:
-        description: 'Custom global headers (e.g., "Authorization: Bearer <token>", comma-separated)'
+        description: 'Custom global headers (space-separated, tips use quotes)'
         required: false
       generate_signature:
         description: 'Generate checksums (SHA256, SHA512, MD5) for downloaded files? (true/false)'
