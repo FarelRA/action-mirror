@@ -135,7 +135,7 @@ jobs:
         run: |
           md5sum=$(md5sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.md5")
           sha256sum=$(sha256sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha256")
-          sha512sum=$(sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512"
+          sha512sum=$(sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512")
 
           echo "MD5    : $md5sum"
           echo "SHA256 : $md5sum"
