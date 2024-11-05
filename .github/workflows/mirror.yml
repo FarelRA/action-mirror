@@ -1,6 +1,12 @@
 name: Mirror Artifacts
 
 on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
   workflow_dispatch:
     inputs:
       urls:
@@ -12,10 +18,6 @@ on:
       custom_headers:
         description: 'Custom global headers (space-separated, tips use quotes)'
         required: false
-      generate_signature:
-        description: 'Generate checksums (SHA256, SHA512, MD5) for downloaded files? (true/false)'
-        required: false
-        default: 'true'
 
 jobs:
   generate_matrix:
@@ -23,11 +25,19 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      - name: Set default inputs
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          echo 'urls="https://example.com/file1.txt"\ "https://example.com/file2.txt"'                   | tee --append $GITHUB_ENV
+          echo 'artifact_names="file1.txt"\ "file2.txt"'                                                 | tee --append $GITHUB_ENV
+          echo 'custom_headers="Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0"' | tee --append $GITHUB_ENV
+
       - name: Parse input
         id: parse_inputs
         run: |
-          urls=(${{ inputs.urls }})
-          artifact_names=(${{ inputs.artifact_names }})
+          urls=(${{ env.urls || inputs.urls }})
+          artifact_names=(${{ env.artifact_names || inputs.artifact_names }})
+          headers=(${{ env.custom_headers || inputs.custom_headers }})
           
           if [[ "${#urls[@]}" -ne "${#artifact_names[@]}" ]]; then
             echo "Error: The number of URLs must equal to the number of artifact names."
@@ -63,7 +73,6 @@ jobs:
           done
 
           # Validate custom headers (optional, basic check)
-          headers=(${{ inputs.custom_headers }})
           if [[ -n "${headers[@]}" ]]; then
             for header in "${headers[@]}"; do
               if [[ ! "$header" =~ : ]]; then  # Check if not contains a colon
@@ -76,8 +85,8 @@ jobs:
       - name: Set matrix
         id: set-matrix
         run: |
-          urls=(${{ inputs.urls }})
-          artifact_names=(${{ inputs.artifact_names }})
+          urls=(${{ env.urls || inputs.urls }})
+          artifact_names=(${{ env.artifact_names || inputs.artifact_names }})
 
           matrix='{"include": ['
           for i in "${!urls[@]}"; do
@@ -96,7 +105,6 @@ jobs:
     env:
       URL: ${{ matrix.url }}
       ARTIFACT_NAME: ${{ matrix.artifact_name }}
-      GENERATE_SIGNATURE: ${{ inputs.generate_signature }}
     steps:
       - name: Install aria2
         run: sudo apt-get update && sudo apt-get install -y aria2
@@ -105,7 +113,7 @@ jobs:
         run: |
           aria2c_command="aria2c -x16 -s1024"
 
-          headers=(${{ inputs.custom_headers }})
+          headers=(${{ env.custom_headers || inputs.custom_headers }})
           if [[ -n "${headers[@]}" ]]; then
             for header in "${headers[@]}"; do
               aria2c_command+=" --header='$header'"
@@ -116,20 +124,22 @@ jobs:
           echo "Executing: $aria2c_command"
           eval "$aria2c_command"
 
-      - name: Generate checksums (optional)
-        if: env.GENERATE_SIGNATURE == 'true'
+      - name: Generate checksums
         run: |
-          sha256sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha256"
-          sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512"
-          md5sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.md5"
+          md5sum=$(md5sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.md5")
+          sha256sum=$(sha256sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha256")
+          sha512sum=$(sha512sum "$ARTIFACT_NAME" | tee "$ARTIFACT_NAME.sha512"
 
+          echo "MD5    : $md5sum"
+          echo "SHA256 : $md5sum"
+          echo "SHA512 : $md5sum"
       - name: Verify downloaded file
         run: |
           if [ ! -f "$ARTIFACT_NAME" ]; then
             echo "Download failed for $ARTIFACT_NAME"
             exit 1
           fi
-          ls -al "$ARTIFACT_NAME"
+          ls -al $ARTIFACT_NAME*
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4.4.3
